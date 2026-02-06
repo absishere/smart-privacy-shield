@@ -1,0 +1,49 @@
+# ==========================
+# 🐍 Backend (Python)
+# ==========================
+backend/venv/
+backend/.venv/
+backend/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+
+# Ignore uploaded and processed images (Don't commit test photos!)
+backend/uploads/
+backend/processed/
+
+# ==========================
+# ⛓️ Blockchain (Hardhat)
+# ==========================
+blockchain/node_modules/
+blockchain/artifacts/
+blockchain/cache/
+blockchain/coverage/
+blockchain/typechain/
+blockchain/coverage.json
+
+# Hardhat Ignition/Deployment logs
+blockchain/ignition/modules/
+
+# Generated contract details (Each teammate should deploy their own local instance)
+blockchain/address.txt
+blockchain/abi.json
+
+# ==========================
+# ⚛️ Frontend (React)
+# ==========================
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# ==========================
+# 🖥️ System & IDE
+# ==========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
