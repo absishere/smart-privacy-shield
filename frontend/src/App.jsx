@@ -1,43 +1,62 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React, { useState } from 'react';
 import WalletConnect from './components/WalletConnect';
-import ImageUpload from './components/ImageUpload'; // ✅ Imported correctly
+import Vault from './components/Vault';
+import UploadDashboard from './components/UploadDashboard'; 
+import SendSecret from './components/SendSecret';
 
-function App() {
-  const [walletAddress, setWalletAddress] = useState("");
-  const [backendStatus, setBackendStatus] = useState("Checking...");
+import './index.css';
 
-  // 1. Check Backend Health on Load
-  useEffect(() => {
-    axios.get("http://127.0.0.1:8000/chain-status")
-      .then(res => {
-        if (res.data.status === "connected") {
-          setBackendStatus(`✅ Online (Contract: ${res.data.contract_name})`);
-        } else {
-          setBackendStatus("❌ Backend Error: " + res.data.details);
-        }
-      })
-      .catch(err => setBackendStatus("❌ Offline (Is Python running?)"));
-  }, []);
+const App = () => {
+    const [walletAddress, setWalletAddress] = useState("");
+    const [activeTab, setActiveTab] = useState("vault"); // 'upload', 'vault', 'send'
 
-  return (
-    <div style={{ fontFamily: "Arial, sans-serif", padding: "40px", maxWidth: "800px", margin: "0 auto" }}>
-      <h1>🛡️ Smart Privacy Shield</h1>
+    if (!walletAddress) {
+        return <WalletConnect setWallet={setWalletAddress} />;
+    }
 
-      {/* Status Bar */}
-      <div style={{ marginBottom: "20px", padding: "10px", background: "#f0f8ff", borderRadius: "5px" }}>
-        <strong>Backend Status:</strong> {backendStatus}
-      </div>
+    return (
+        <div className="dashboard-container">
+            {/* Sidebar Navigation */}
+            <aside className="sidebar glass-card">
+                <div className="sidebar-header">
+                    <h2>🛡️ Privacy Shield</h2>
+                    <p className="wallet-badge" 
+                       onClick={() => navigator.clipboard.writeText(walletAddress)}
+                       style={{ cursor: "pointer", title: "Click to copy address" }}>
+                        {walletAddress.substring(0, 6)}...{walletAddress.substring(38)} 📋
+                    </p>
+                </div>
+                
+                <nav className="sidebar-nav">
+                    <button 
+                        className={`nav-btn ${activeTab === 'upload' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('upload')}
+                    >
+                        📤 Secure Upload
+                    </button>
+                    <button 
+                        className={`nav-btn ${activeTab === 'vault' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('vault')}
+                    >
+                        🗄️ My Vault (S3)
+                    </button>
+                    <button 
+                        className={`nav-btn ${activeTab === 'send' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('send')}
+                    >
+                        🕵️ Send Secret (Stego)
+                    </button>
+                </nav>
+            </aside>
 
-      {/* Wallet Component */}
-      <WalletConnect setWallet={setWalletAddress} />
-
-      {/* ✅ CHANGE IS HERE: We replaced the old <div>...</div> with the component */}
-      {walletAddress && (
-        <ImageUpload walletAddress={walletAddress} />
-      )}
-    </div>
-  );
-}
+            {/* Main Content Area */}
+            <main className="main-content">
+                {activeTab === 'vault' && <Vault walletAddress={walletAddress} />}
+                {activeTab === 'upload' && <UploadDashboard walletAddress={walletAddress} />}
+                {activeTab === 'send' && <SendSecret walletAddress={walletAddress} />}
+            </main>
+        </div>
+    );
+};
 
 export default App;

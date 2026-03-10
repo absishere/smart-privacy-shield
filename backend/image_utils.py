@@ -15,20 +15,19 @@ reader = easyocr.Reader(['en'], gpu=False, quantize=False)
 
 print("✅ AI Models Loaded!")
 
-def process_image(input_path, output_path):
+def detect_sensitive_regions(input_path):
     """
     Detects faces and text/handwriting.
-    Draws BOUNDING BOXES only (Green for Faces, Red for Text).
-    NO LABELS. NO BLURRING.
+    Returns a list of bounding boxes: [((x1, y1), (x2, y2)), ...]
     """
     
     # A. Load Image
-    img = cv2.imread(input_path)
+    img = cv2.imread(str(input_path))
     if img is None:
-        return False, "Could not load image"
+        return []
     
     height, width, _ = img.shape
-    detections_count = 0
+    boxes = []
 
     # ---------------------------------------------------------
     # B. DETECT FACES (MediaPipe)
@@ -38,8 +37,6 @@ def process_image(input_path, output_path):
 
     if results.detections:
         for detection in results.detections:
-            detections_count += 1
-            
             # Get bounding box
             bboxC = detection.location_data.relative_bounding_box
             x = int(bboxC.xmin * width)
@@ -50,9 +47,9 @@ def process_image(input_path, output_path):
             # Safety check
             x, y = max(0, x), max(0, y)
             w, h = min(w, width - x), min(h, height - y)
-
-            # VISUALIZE: Draw GREEN box only (No Text Label)
-            cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            
+            # Format: ((x1, y1), (x2, y2))
+            boxes.append(((x, y), (x + w, y + h)))
 
     # ---------------------------------------------------------
     # C. DETECT TEXT & HANDWRITING (EasyOCR)
@@ -67,8 +64,6 @@ def process_image(input_path, output_path):
     text_results = reader.readtext(enhanced_img, paragraph=True, x_ths=1.0, mag_ratio=1.5)
 
     for result in text_results:
-        detections_count += 1
-        
         # In paragraph mode, result is [[pts], "text_string"]
         bbox = result[0] 
         
@@ -79,15 +74,7 @@ def process_image(input_path, output_path):
         x_max = int(max(tr[0], br[0]))
         y_max = int(max(bl[1], br[1]))
         
-        w = x_max - x
-        h = y_max - y
-        
-        # VISUALIZE: Draw RED box only (No Text Label)
-        cv2.rectangle(img, (x, y), (x+w, y+h), (0, 0, 255), 2)
+        # Format: ((x1, y1), (x2, y2))
+        boxes.append(((x, y), (x_max, y_max)))
 
-    # ---------------------------------------------------------
-    # D. Save Annotated Image
-    # ---------------------------------------------------------
-    cv2.imwrite(output_path, img)
-    
-    return True, f"Detection Complete: Found {detections_count} regions."
+    return boxes

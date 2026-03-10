@@ -10,6 +10,15 @@ backend/.pytest_cache/
 # Ignore uploaded and processed images (Don't commit test photos!)
 backend/uploads/
 backend/processed/
+backend/tmp_processing/
+backend/images/encrypted/
+backend/images/hidden/
+backend/images/keys/
+
+# Environment Variables
+backend/.env
+frontend/.env
+.env
 
 # ==========================
 # ⛓️ Blockchain (Hardhat)

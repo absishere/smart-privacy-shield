@@ -1,10 +1,15 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 import os
-from blockchain_utils import get_contract
-
-from image_utils import process_image 
+from pathlib import Path
+from blockchain_utils import get_contract, mint_privacy_nft
+from image_utils import detect_sensitive_regions
+from encrypt import encrypt_image, decrypt_image, decrypt_image_stream
+from stego import hide_secret_image, reveal_secret_image, COVERS_DIR
+import shutil
+from cloud_utils import upload_to_s3, download_from_s3, list_user_images, get_s3_bytes, delete_from_s3
+import base64
+import io
 
 app = FastAPI(title="Smart Privacy Shield API")
 
@@ -16,18 +21,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Setup Folders
-UPLOAD_DIR = "uploads"
-PROCESSED_DIR = "processed"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(PROCESSED_DIR, exist_ok=True)
-
-# Mount Static Files (So we can see images later)
-app.mount("/static", StaticFiles(directory="processed"), name="static")
+# Use a single temporary directory for all processing steps before S3 upload/deletion
+TEMP_DIR = Path("tmp_processing")
+os.makedirs(TEMP_DIR, exist_ok=True)
+os.makedirs(COVERS_DIR, exist_ok=True) # Needed so get_covers works
 
 @app.get("/")
 def read_root():
-    return {"message": "Privacy Shield API is running (Waiting for AI Models)"}
+    return {"message": "Privacy Shield API is running"}
+
+@app.get("/covers")
+def get_covers():
+    if not COVERS_DIR.exists():
+        return {"covers": []}
+    covers = [f.name for f in COVERS_DIR.iterdir() if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg"]]
+    return {"covers": covers}
 
 @app.get("/chain-status")
 def check_chain():
@@ -40,27 +48,272 @@ def check_chain():
             return {"status": "error", "details": str(e)}
     return {"status": "failed_to_load_contract"}
 
-@app.post("/upload")
-async def upload_image(file: UploadFile = File(...)):
-    # 1. Save Original
-    file_location = f"{UPLOAD_DIR}/{file.filename}"
-    with open(file_location, "wb+") as file_object:
-        file_object.write(file.file.read())
-    
-    # 2. Define Output Path
-    processed_filename = f"protected_{file.filename}"
-    output_location = f"{PROCESSED_DIR}/{processed_filename}"
+@app.get("/user-images")
+def get_user_images(wallet_address: str):
+    """Returns all available encrypted/stego images for this user from S3."""
+    if not wallet_address:
+        raise HTTPException(status_code=400, detail="Wallet address required")
+    images = list_user_images(wallet_address)
+    return {"status": "success", "images": images}
 
-    # 3. CALL YOUR AI FUNCTION HERE
-    # This runs the MediaPipe + EasyOCR logic you just wrote
-    success, message = process_image(file_location, output_location)
+@app.post("/process-image")
+async def process_image(
+    file: UploadFile = File(...), 
+    wallet_address: str = Form(""),
+    is_stego_mode: bool = Form(False),
+    cover_image_name: str = Form("default_cover.png"),
+    custom_cover: UploadFile | None = File(None)
+):
+    try:
+        # 1. Save the incoming Secret Image temporarily
+        input_path = TEMP_DIR / file.filename
+        with open(input_path, "wb") as f:
+            f.write(await file.read())
 
-    if success:
+        # 2. AI Detection & ROI Encryption
+        # Detect faces/text and create the 'encrypted' version of the secret image
+        boxes = detect_sensitive_regions(input_path) 
+        encryption_result = encrypt_image(
+            filename=file.filename,
+            boxes=boxes,
+            input_dir=TEMP_DIR,
+            output_dir=TEMP_DIR
+        )
+
+        # 3. MINT THE NFT
+        token_id = None
+        if wallet_address:
+            try:
+                token_id = mint_privacy_nft(wallet_address, encryption_result.key)
+                if token_id is None:
+                    raise Exception("Blockchain Minting Failed")
+                print(f"✅ NFT Minted! Token ID: {token_id}")
+            except Exception as b_err:
+                print(f"❌ Blockchain error: {b_err}")
+                raise HTTPException(status_code=500, detail=f"Blockchain Error: {str(b_err)}")
+
+        # Phase 4: S3 ROI metadata upload
+        roi_meta_path = TEMP_DIR / f"{file.filename}.roi"
+        
+        # 4. PHASE 1: Image-in-Image Steganography (Conditional)
+        if is_stego_mode:
+            if custom_cover:
+                # Save the custom cover safely to the covers directory
+                cover_path = COVERS_DIR / custom_cover.filename
+                with open(cover_path, "wb") as f:
+                    f.write(await custom_cover.read())
+                final_cover_name = custom_cover.filename
+            else:
+                cover_path = COVERS_DIR / cover_image_name
+                final_cover_name = cover_image_name
+                if not cover_path.exists():
+                    raise HTTPException(status_code=400, detail=f"Cover image {cover_image_name} not found in {COVERS_DIR}")
+
+            stego_output_path = TEMP_DIR / f"stego_{file.filename}"
+            hide_secret_image(
+                cover_path=str(cover_path),
+                secret_path=str(TEMP_DIR / file.filename),
+                output_path=str(stego_output_path)
+            )
+
+            # PHASE 2/4: AWS UPLOAD Image & Metadata
+            cloud_url = upload_to_s3(stego_output_path, f"stego/{wallet_address}/{file.filename}")
+            if roi_meta_path.exists(): upload_to_s3(roi_meta_path, f"stego/{wallet_address}/{file.filename}.roi")
+            
+            if not cloud_url:
+                raise HTTPException(status_code=500, detail="Failed to upload to AWS S3. Check credentials.")
+            
+            # Temporary local cleanup
+            if input_path.exists(): os.remove(input_path)
+            if (TEMP_DIR / file.filename).exists(): os.remove(TEMP_DIR / file.filename)
+            if roi_meta_path.exists(): os.remove(roi_meta_path)
+            if stego_output_path.exists(): os.remove(stego_output_path)
+
+            return {
+                "status": "success",
+                "mode": "stego",
+                "message": f"Secret image hidden in {final_cover_name} and NFT minted!",
+                "token_id": token_id,
+                "display_url": cloud_url,
+                "storage": "AWS S3" if cloud_url else "Error",
+                "original": f"stego_{file.filename}"
+            }
+
+        # DEFAULT: Feature 1 Only
+        cloud_url = upload_to_s3(TEMP_DIR / file.filename, f"encrypted/{wallet_address}/{file.filename}")
+        if roi_meta_path.exists(): upload_to_s3(roi_meta_path, f"encrypted/{wallet_address}/{file.filename}.roi")
+        
+        if not cloud_url:
+            raise HTTPException(status_code=500, detail="Failed to upload to AWS S3. Check credentials.")
+        
+        # Temporary local cleanup
+        if input_path.exists(): os.remove(input_path)
+        if (TEMP_DIR / file.filename).exists(): os.remove(TEMP_DIR / file.filename)
+        if roi_meta_path.exists(): os.remove(roi_meta_path)
+        
         return {
             "status": "success",
-            "message": message,
-            "original": file.filename,
-            "processed_url": f"http://127.0.0.1:8000/static/{processed_filename}"
+            "mode": "encryption_only",
+            "message": f"Image processed. Detected {len(boxes)} sensitive regions.",
+            "token_id": token_id,
+            "display_url": cloud_url,
+            "storage": "AWS S3" if cloud_url else "Error",
+            "original": file.filename
         }
-    else:
-        return {"status": "error", "message": message}
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/decrypt")
+async def decrypt_image_endpoint(
+    filename: str = Form(...), 
+    wallet_address: str = Form(...),
+    token_id: int = Form(...) # We need the token_id to check specific ownership
+):
+    if not wallet_address:
+        raise HTTPException(status_code=400, detail="Wallet address is required")
+    
+    try:
+        # 1. Connect to Blockchain
+        w3, contract = get_contract()
+        if not contract:
+            raise HTTPException(status_code=500, detail="Blockchain connection failed")
+
+        # 2. VALIDATION: Check if this wallet owns the specific NFT
+        try:
+            current_owner = contract.functions.ownerOf(token_id).call()
+            # Normalize addresses to checksum format for a fair comparison
+            if w3.to_checksum_address(current_owner) != w3.to_checksum_address(wallet_address):
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Access Denied: You do not own the NFT associated with this image."
+                )
+                
+            # Fetch the decryption key directly from the Smart Contract using token_id!    
+            encrypted_key = contract.functions.getKey(token_id).call({'from': w3.to_checksum_address(wallet_address)})
+            
+        except Exception as e:
+            raise HTTPException(status_code=403, detail=f"Ownership verification failed: {str(e)}")
+
+        print(f"✅ Ownership Verified for {wallet_address}. Decrypting in memory...")
+
+        # 3. Always fetch from Cloud (Strict Cloud-First Architecture)
+        if filename.startswith("stego/"):
+            s3_image_key = filename
+            s3_meta_key = f"{filename}.roi"
+            is_stego = True
+        elif filename.startswith("encrypted/"):
+            s3_image_key = filename
+            s3_meta_key = f"{filename}.roi"
+            is_stego = False
+        else:
+            # Fallback for old filename queries
+            if filename.startswith("stego_"):
+                s3_image_key = f"stego/{filename.replace('stego_', '')}"
+                s3_meta_key = f"stego/{filename.replace('stego_', '')}.roi"
+                is_stego = True
+            else:
+                s3_image_key = f"encrypted/{filename}"
+                s3_meta_key = f"encrypted/{filename}.roi"
+                is_stego = False
+
+        print(f"☁️ Fetching {s3_image_key} and metadata from AWS S3 directly to RAM...")
+        image_bytes = get_s3_bytes(s3_image_key)
+        meta_bytes = get_s3_bytes(s3_meta_key)
+
+        if not image_bytes or not meta_bytes:
+            raise HTTPException(status_code=404, detail="Encrypted data or metadata missing from AWS S3.")
+
+        # 4. Steganography extraction OR Standard Decryption (In Memory)
+        if is_stego:
+            # Note: Steganography extraction currently relies on the local disk via numpy/PIL paths 
+            # To keep things stateless but functioning, we write to the temp drive JUST for extraction
+            # then delete immediately after passing bytes to decrypt_image_stream.
+            real_filename = filename.split("/")[-1]
+            temp_stego = TEMP_DIR / f"temp_{real_filename}"
+            temp_extracted = TEMP_DIR / f"extracted_{real_filename}"
+            
+            with open(temp_stego, "wb") as f:
+                f.write(image_bytes)
+                
+            reveal_secret_image(str(temp_stego), str(temp_extracted))
+            
+            with open(temp_extracted, "rb") as f:
+                extracted_image_bytes = f.read()
+                
+            if temp_stego.exists(): os.remove(temp_stego)
+            if temp_extracted.exists(): os.remove(temp_extracted)
+            
+            try:
+                decrypted_pil_image = decrypt_image_stream(
+                    image_bytes=extracted_image_bytes,
+                    metadata_bytes=meta_bytes,
+                    key=encrypted_key
+                )
+            except UnicodeDecodeError:
+                raise HTTPException(status_code=403, detail="Invalid Token ID. The blockchain key does not match this image.")
+        else:
+            try:
+                decrypted_pil_image = decrypt_image_stream(
+                    image_bytes=image_bytes,
+                    metadata_bytes=meta_bytes,
+                    key=encrypted_key
+                )
+            except UnicodeDecodeError:
+                raise HTTPException(status_code=403, detail="Invalid Token ID. The blockchain key does not match this image.")
+            
+        # 5. Convert to Base64 to send to Frontend
+        buffered = io.BytesIO()
+        decrypted_pil_image.save(buffered, format="JPEG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+
+        return {
+            "status": "success",
+            "message": "Image decrypted securely in memory. No traces left.",
+            "image_data": f"data:image/jpeg;base64,{img_str}" # Sends raw data, no URL!
+        }
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.delete("/delete-image")
+async def delete_image_endpoint(
+    filename: str = Form(...), 
+    wallet_address: str = Form(...),
+    token_id: int = Form(...)
+):
+    try:
+        # 1. Verify Ownership (Same strict check as decryption)
+        w3, contract = get_contract()
+        current_owner = contract.functions.ownerOf(token_id).call()
+        if w3.to_checksum_address(current_owner) != w3.to_checksum_address(wallet_address):
+            raise HTTPException(status_code=403, detail="Access Denied: You do not own this NFT.")
+
+        # 2. Determine S3 Keys
+        if filename.startswith("stego/") or filename.startswith("encrypted/"):
+            s3_image_key = filename
+            s3_meta_key = f"{filename}.roi"
+        elif filename.startswith("stego_"):
+            s3_image_key = f"stego/{filename.replace('stego_', '')}"
+            s3_meta_key = f"stego/{filename.replace('stego_', '')}.roi"
+        else:
+            s3_image_key = f"encrypted/{filename}"
+            s3_meta_key = f"encrypted/{filename}.roi"
+
+        # 3. Delete from AWS S3
+        img_deleted = delete_from_s3(s3_image_key)
+        meta_deleted = delete_from_s3(s3_meta_key)
+
+        if not img_deleted:
+            raise HTTPException(status_code=500, detail="Failed to delete image from AWS S3.")
+
+        return {"status": "success", "message": "Image and metadata permanently shredded from the cloud."}
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -17,7 +17,7 @@ const WalletConnect = ({ setWallet }) => {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
             const address = await signer.getAddress();
-            
+
             // 3. Save the address
             setAccount(address);
             setWallet(address); // Pass it up to the parent app
@@ -29,24 +29,30 @@ const WalletConnect = ({ setWallet }) => {
     };
 
     return (
-        <div style={{ padding: "20px", border: "1px solid #ddd", borderRadius: "8px", marginBottom: "20px" }}>
-            <h3>🔐 Member 3: Wallet Auth</h3>
-            
+        <div className="glass-card">
+            <h3>🔐 Wallet Authentication</h3>
+
             {!account ? (
-                <button 
-                    onClick={connectWallet}
-                    style={{ padding: "10px 20px", cursor: "pointer", background: "#4CAF50", color: "white", border: "none", borderRadius: "5px" }}
-                >
-                    Connect MetaMask
-                </button>
+                <div>
+                    <p style={{ color: "var(--text-secondary)", marginBottom: "15px" }}>Connect your wallet to access secure image processing.</p>
+                    <button
+                        className="btn btn-primary"
+                        onClick={connectWallet}
+                    >
+                        Connect MetaMask
+                    </button>
+                </div>
             ) : (
                 <div>
-                    <p style={{ color: "green", fontWeight: "bold" }}>✅ Connected</p>
-                    <code style={{ background: "#eee", padding: "5px" }}>{account}</code>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                        <span style={{ color: "var(--success)" }}>●</span>
+                        <span style={{ fontWeight: "500" }}>Connected securely</span>
+                    </div>
+                    <code>{account}</code>
                 </div>
             )}
-            
-            {error && <p style={{ color: "red" }}>{error}</p>}
+
+            {error && <p style={{ color: "var(--danger)", marginTop: "10px", fontSize: "0.9rem" }}>{error}</p>}
         </div>
     );
 };
