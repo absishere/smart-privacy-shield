@@ -1,4 +1,4 @@
-# 🛡️ Smart Privacy Shield
+#  Smart Privacy Shield
 
 ![Smart Privacy Shield](https://img.shields.io/badge/Status-Beta-success?style=for-the-badge) 
 ![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
@@ -8,7 +8,7 @@
 
 **Smart Privacy Shield** is a next-generation decentralized privacy SaaS application. It combines dynamic AI region encryption, blockchain-based access control (NFTs), and stateless secure memory decryption to ensure that your sensitive images remain truly yours. 
 
-## ✨ Key Features
+##  Key Features
 
 - **Stateless Cloud Architecture:** Encrypted image payloads and metadata are stored exclusively on AWS S3. Decryption happens entirely in your local RAM—no decrypted files are ever saved to disk permanently.
 - **Blockchain Key Management:** AES-256 encryption keys are generated dynamically and securely tethered to an ERC-721 Token (NFT) on the blockchain. You must hold the NFT to decrypt the image.
@@ -16,7 +16,7 @@
 - **"Shred from Cloud":** Complete autonomy over your data. With one click, prove your wallet ownership and permanently obliterate the file and metrics directly from the AWS S3 buckets.
 - **Receiver Payload Transfer:** Airdrop hidden decrypted payloads to a receiver. The system embeds the secret in a selected cover image and directly mints the access NFT into the receiver's Ethereum wallet.
 
-## 🏗️ The Architecture
+##  The Architecture
 
 1. **Upload Phase:**
     - AI dynamically detects ROI (Region of Interest - faces/text) using OpenCV/Haar Cascades.
@@ -30,7 +30,7 @@
     - Decrypts the image entirely via in-memory ByteStreams.
     - Self-destructs the payload from RAM after a secure 60-second viewing window.
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 
@@ -98,7 +98,7 @@ npm run dev
 
 Navigate to `http://localhost:5173`. Connect your MetaMask wallet, and enter the Vault! 🕵️
 
-## 📁 Repository Structure
+##  Repository Structure
 
 ```graphql
 smart-privacy-shield/
@@ -121,7 +121,7 @@ smart-privacy-shield/
         └── PrivacyShield.sol # Core ERC-721 implementation handling encryption keys map.
 ```
 
-## 🔒 Security Commitments
+##  Security Commitments
 Any issues or proposed architectural upgrades relating to stateless memory tracking or AES algorithm hashing improvements should be formally routed through GitHub Issues.
 
 ---
