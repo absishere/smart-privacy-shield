@@ -1,94 +1,188 @@
-#  Smart Privacy Shield
+<div align="center">
 
-![Smart Privacy Shield](https://img.shields.io/badge/Status-Beta-success?style=for-the-badge) 
-![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
+# 🛡️ Smart Privacy Shield
+
+**A next-gen, decentralized, stateless privacy SaaS for your most sensitive images.**
+
+![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=for-the-badge)
+![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![React](https://img.shields.io/badge/React-Vite-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
-![AWS S3](https://img.shields.io/badge/AWS_S3-569A31?style=for-the-badge&logo=amazon-aws&logoColor=white)
-![Ethereum](https://img.shields.io/badge/Ethereum-3C3C3D?style=for-the-badge&logo=Ethereum&logoColor=white)
+![AWS S3](https://img.shields.io/badge/AWS_S3-Private_Bucket-FF9900?style=for-the-badge&logo=amazon-aws&logoColor=white)
+![Ethereum](https://img.shields.io/badge/Ethereum_ERC--721-NFT_Key_Store-3C3C3D?style=for-the-badge&logo=Ethereum&logoColor=white)
+![Solidity](https://img.shields.io/badge/Solidity-Hardhat-363636?style=for-the-badge&logo=solidity)
 
-**Smart Privacy Shield** is a next-generation decentralized privacy SaaS application. It combines dynamic AI region encryption, blockchain-based access control (NFTs), and stateless secure memory decryption to ensure that your sensitive images remain truly yours. 
+</div>
 
-##  Key Features
+---
 
-- **Stateless Cloud Architecture:** Encrypted image payloads and metadata are stored exclusively on AWS S3. Decryption happens entirely in your local RAM—no decrypted files are ever saved to disk permanently.
-- **Blockchain Key Management:** AES-256 encryption keys are generated dynamically and securely tethered to an ERC-721 Token (NFT) on the blockchain. You must hold the NFT to decrypt the image.
-- **Image-in-Image Steganography:** Hide highly sensitive encrypted data payloads inside regular, innocent-looking cover images using advanced 2-bit LSB steganography algorithms.
-- **"Shred from Cloud":** Complete autonomy over your data. With one click, prove your wallet ownership and permanently obliterate the file and metrics directly from the AWS S3 buckets.
-- **Receiver Payload Transfer:** Airdrop hidden decrypted payloads to a receiver. The system embeds the secret in a selected cover image and directly mints the access NFT into the receiver's Ethereum wallet.
+## ✨ What it Does
 
-##  The Architecture
+Smart Privacy Shield encrypts the sensitive regions of your images (faces, text, IDs) using **AI-detected ROI + AES-256**, stores the payload exclusively on **AWS S3**, and gates access using **ERC-721 NFTs on the Ethereum blockchain**. Decryption is 100% **in-memory** — no decrypted image is ever written to disk or cloud.
 
-1. **Upload Phase:**
-    - AI dynamically detects ROI (Region of Interest - faces/text) using OpenCV/Haar Cascades.
-    - Slices ROI, encrypts pixels with randomized AES-256.
-    - Mints dynamic Blockchain Key to user wallet.
-    - Pushes encrypted payload to AWS S3, deleting all local cached temporary files.
+---
 
-2. **Secure Vault Phase:**
-    - Fetches the payload securely from AWS S3 via ephemeral URL links.
-    - Queries the blockchain for token access via a MetaMask challenge.
-    - Decrypts the image entirely via in-memory ByteStreams.
-    - Self-destructs the payload from RAM after a secure 60-second viewing window.
+## 🚀 Core Features
 
-##  Getting Started
+| Feature | Description |
+|---|---|
+| 🤖 **AI Region Detection** | OpenCV + MediaPipe + EasyOCR auto-detect faces, eyes, and text in uploaded images |
+| 🔐 **AES-256 Stateless Encryption** | Only the sensitive regions are encrypted; keys are stored on-chain, never on a server |
+| ☁️ **AWS S3 Cloud Vault** | Encrypted payloads stored in a **private S3 bucket**, scoped per wallet address |
+| ⛓️ **NFT-Gated Access** | An ERC-721 NFT acts as the decryption key — you must own it to decrypt |
+| 🧠 **In-Memory Decryption** | Decryption runs entirely in server RAM (ByteStream), result returned as Base64 — never saved |
+| ⏱️ **60-Second Auto-Shred** | Decrypted image self-destructs from the browser's memory after 60 seconds |
+| 🖼️ **Image-in-Image Steganography** | Uses 2-bit LSB to hide an encrypted payload inside a cover image visually |
+| 🎯 **Receiver Airdrop** | Mint the access NFT directly to a receiver's wallet — no gas from the sender |
+| 🗑️ **Shred from Cloud** | Ownership-verified permanent deletion of both the image and `.roi` metadata from S3 |
+| 📋 **Wallet Copy** | Click your wallet address in the sidebar to copy it instantly |
+
+---
+
+## 🏗️ Architecture Overview
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                          USER (MetaMask Wallet)                        │
+└────────────────┬───────────────────────────────────────────────────────┘
+                 │ connects via ethers.js
+                 ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                    React + Vite Dashboard (Port 5173)                  │
+│  WalletConnect → UploadDashboard | Vault | SendSecret | ImageUpload   │
+└────────────────┬───────────────────────────────────────────────────────┘
+                 │ REST API (axios, multipart/form-data)
+                 ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                     FastAPI Backend (Port 8000)                        │
+│                                                                        │
+│  /process-image  ──► AI Detect ──► AES-256 Encrypt ──► Mint NFT       │
+│                                          │                             │
+│  /decrypt        ──► Verify NFT ──► Fetch S3 Bytes ──► RAM Decrypt    │
+│                                                                        │
+│  /delete-image   ──► Verify NFT ──► S3 Delete (img + .roi)            │
+│  /covers         ──► List cover images from backend/images/covs/       │
+│  /user-images    ──► List S3 objects scoped to wallet address          │
+│  /chain-status   ──► Check Ganache + Contract connectivity             │
+└────────┬─────────────────────────────────────┬──────────────────────┘
+         │                                     │
+         ▼                                     ▼
+┌─────────────────┐                 ┌─────────────────────────┐
+│  AWS S3 (Private│                 │    Ganache + Hardhat     │
+│  Bucket)        │                 │    ERC-721 NFT Contract  │
+│                 │                 │    PrivacyShield.sol     │
+│  encrypted/     │                 │    ─ safeMint(wallet,key)│
+│  ├─ {wallet}/   │                 │    ─ ownerOf(tokenId)    │
+│  │   └─ img.png │                 │    ─ getKey(tokenId)     │
+│  └─ {wallet}/   │                 │       (owner-only)       │
+│      └─ img.roi │                 └─────────────────────────┘
+│  stego/         │
+│  └─ {wallet}/   │
+└─────────────────┘
+```
+
+---
+
+## 📂 Repository Structure
+
+```
+smart-privacy-shield/
+│
+├── backend/                    # Python FastAPI Backend
+│   ├── main.py                 # API endpoints & request orchestration
+│   ├── encrypt.py              # AES-256 encryption + decrypt_image_stream
+│   ├── image_utils.py          # OpenCV + MediaPipe + EasyOCR ROI detection
+│   ├── stego.py                # 2-bit LSB image-in-image steganography
+│   ├── cloud_utils.py          # AWS S3: upload, fetch bytes, list, delete
+│   ├── blockchain_utils.py     # web3.py: mint NFT, get key, verify ownership
+│   ├── pyproject.toml          # Poetry dependencies (Python >=3.10,<3.12)
+│   ├── requirements.txt        # Pip-style dependency list
+│   └── images/covs/            # Pre-set cover images for steganography
+│
+├── frontend/                   # React + Vite Frontend
+│   └── src/
+│       ├── App.jsx             # Sidebar shell & wallet state management
+│       ├── index.css           # Glassmorphism dark-mode design system
+│       ├── main.jsx            # React entry point
+│       └── components/
+│           ├── WalletConnect.jsx      # MetaMask ethers.js connection
+│           ├── UploadDashboard.jsx    # Encrypt & upload workflow UI
+│           ├── Vault.jsx              # S3 image grid, decrypt, shred
+│           ├── SendSecret.jsx         # Steganography + receiver airdrop UI
+│           └── ImageUpload.jsx        # Legacy single-image upload component
+│
+├── blockchain/                 # Hardhat + Solidity
+│   ├── contracts/
+│   │   └── PrivacyShield.sol   # ERC-721 + tokenToKey mapping
+│   ├── scripts/                # Deployment scripts
+│   └── ignition/               # Hardhat Ignition modules
+│
+└── tests/                      # Backend test scripts
+    └── test_stego.py
+```
+
+---
+
+## ⚙️ Getting Started
 
 ### Prerequisites
 
-- Node.js (v16+)
-- Python (v3.10 to v3.12)
-- MetaMask Extension
-- Ganache (Local Ethereum Blockchain)
-- AWS SDK Credentials with active S3 bucket access.
+- **Python** `>=3.10, <3.12`
+- **Node.js** `v16+` and npm
+- **MetaMask** browser extension
+- **Ganache** running on `http://127.0.0.1:7545`
+- **AWS account** with a private S3 bucket
 
-### 1. Blockchain Setup
+---
 
-Use Hardhat to securely deploy the Smart Contract locally:
+### 1. 🔗 Blockchain Setup
 
 ```bash
 cd blockchain
 npm install
 npx hardhat compile
+
+# Deploy to local Ganache
 npx hardhat ignition deploy ./ignition/modules/PrivacyShield.js --network localhost
 ```
-*Note: Make sure Ganache is running on `http://127.0.0.1:7545` before deploying!*
 
-### 2. Backend (FastAPI) Setup
+After deployment, note the **contract address** and **ABI** — they go into `address.txt` and `abi.json`.
 
-Configure your Python virtual environment and `.env` secrets:
+---
+
+### 2. 🐍 Backend Setup
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # Or `venv\Scripts\activate` on Windows
+# Using Poetry (recommended)
+poetry install
+poetry run uvicorn main:app --reload
+
+# Or using pip
 pip install -r requirements.txt
+uvicorn main:app --reload
 ```
 
-Create a `.env` file in the `/backend` folder. **DO NOT COMMIT THIS FILE.** Ensure it mirrors `.env.example`:
+Create `backend/.env` (**DO NOT COMMIT**):
 
 ```env
+# Blockchain
 GANACHE_URL=http://127.0.0.1:7545
 CHAIN_ID=1337
+CONTRACT_ADDRESS=0xYourDeployedContractAddress
+ADMIN_PRIVATE_KEY=0xYourGanacheAccountPrivateKey
+ADMIN_ADDRESS=0xYourGanacheAccountAddress
 
-# Ensure you have your Contract Address and private deployment keys here
-CONTRACT_ADDRESS=0xYourDeployedAddress
-ADMIN_PRIVATE_KEY=your_private_key
-ADMIN_ADDRESS=your_wallet_address
-
-# AWS Architecture Requirements
-AWS_ACCESS_KEY=your_aws_access_key
-AWS_SECRET_KEY=your_aws_secret_key
+# AWS S3
+AWS_ACCESS_KEY=your_access_key_id
+AWS_SECRET_KEY=your_secret_access_key
 AWS_REGION=us-east-1
-AWS_BUCKET_NAME=your_s3_bucket_name
+AWS_BUCKET_NAME=your-private-bucket-name
 ```
 
-Run the robust Backend server:
-```bash
-poetry run uvicorn main:app --reload
-```
+---
 
-### 3. Frontend (React) Setup
-
-Deploy the sleek Frontend dashboard:
+### 3. ⚛️ Frontend Setup
 
 ```bash
 cd frontend
@@ -96,33 +190,71 @@ npm install
 npm run dev
 ```
 
-Navigate to `http://localhost:5173`. Connect your MetaMask wallet, and enter the Vault! 🕵️
-
-##  Repository Structure
-
-```graphql
-smart-privacy-shield/
-├── backend/            # Python FastAPI, Cloud Integrations, and AI Crypto Logic
-│   ├── main.py         # Primary Endpoints (/process-image, /decrypt, /delete-image)
-│   ├── cloud_utils.py  # AWS S3 Cloud Architecture hooks
-│   ├── encrypt.py      # Core stateless AES-256 Stream operations
-│   ├── stego.py        # Image-in-Image 2-Bit LSB hiders
-│   └── blockchain_utils# Web3 Py Hooks for NFT key querying
-│
-├── frontend/           # React + Vite Dashboard
-│   ├── src/components/
-│   │   ├── Vault.jsx         # S3 File display and memory shredder UI
-│   │   ├── SendSecret.jsx    # Complex Stego+Receiver Flow architecture UI
-│   │   └── WalletConnect.jsx # Eth Web3 Ethers.js integration
-│   └── index.css       # Fully custom aesthetic glassmorphism UI rulesets
-│
-└── blockchain/         # Hardhat and Solidity Contracts
-    └── contracts/
-        └── PrivacyShield.sol # Core ERC-721 implementation handling encryption keys map.
-```
-
-##  Security Commitments
-Any issues or proposed architectural upgrades relating to stateless memory tracking or AES algorithm hashing improvements should be formally routed through GitHub Issues.
+Navigate to **`http://localhost:5173`**, connect MetaMask, and enter the Shield! 🛡️
 
 ---
-*Built tightly for the protection of privacy in the modern digital age.*
+
+## 🔁 How the Flows Work
+
+### Upload (Secure Encrypt & Store)
+1. User selects image → sent to `POST /process-image`
+2. AI (`image_utils.py`) detects faces/text → generates bounding boxes
+3. `encrypt.py` slices & AES-256 encrypts each ROI → saves `.roi` metadata
+4. `blockchain_utils.py` mints NFT to user wallet with AES key stored on-chain
+5. `cloud_utils.py` uploads `encrypted/{wallet}/image.png` + `.roi` to private S3
+6. All local temp files purged from `tmp_processing/`
+
+### Decrypt (In-Memory, Zero-Trace)
+1. User clicks Decrypt → enters Token ID → `POST /decrypt`
+2. Backend checks `contract.ownerOf(tokenId)` == wallet address
+3. Backend fetches AES key from `contract.getKey(tokenId)` (owner-only function)
+4. Encrypted image bytes + `.roi` bytes streamed from S3 directly into server RAM
+5. `decrypt_image_stream` reconstructs & decrypts fully in memory
+6. Returns `data:image/jpeg;base64,...` string — shown for **60 seconds** then erased
+
+### Send Secret (Steganography + Airdrop)
+1. User selects secret image + a cover image (preset dropdown OR custom upload)
+2. Backend encrypts secret image, then `stego.py` injects it into cover's LSB pixels
+3. Stego image uploaded to `stego/{receiver_wallet}/image.png` on S3
+4. NFT minted **directly to the receiver's wallet** by the backend relayer
+5. Receiver opens their Vault — the cover image is there, ready to decrypt
+
+### Shred from Cloud
+1. User clicks 🗑️ Shred → enters Token ID → `DELETE /delete-image`
+2. Backend verifies NFT ownership on-chain
+3. Both `image.png` and `image.png.roi` permanently deleted from S3
+4. Vault grid refreshes automatically
+
+---
+
+## 🔒 Security Design
+
+- **No plaintext keys on server** — AES keys live exclusively on the blockchain inside the NFT
+- **No decrypted files on disk** — decryption is 100% in-server RAM via ByteStream
+- **Per-wallet S3 namespacing** — `encrypted/{wallet}/` ensures users only see their own files
+- **NFT ownership verified on every action** — decrypt, delete, all require `ownerOf` check
+- **`UnicodeDecodeError` guard** — wrong Token ID triggers a `403 Invalid Token ID` response
+- **60-second memory shred** — browser auto-clears the Base64 decrypted image state
+
+---
+
+## 🧰 Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite, ethers.js v6, axios |
+| Backend | Python 3.11, FastAPI, uvicorn, Poetry |
+| AI / Vision | OpenCV, MediaPipe, EasyOCR |
+| Cryptography | AES-256 (PyCryptodome), NumPy |
+| Steganography | 2-bit LSB (NumPy + Pillow) |
+| Blockchain | Solidity, Hardhat, web3.py, Ganache |
+| Cloud Storage | AWS S3 (boto3), Presigned URLs |
+| Standards | ERC-721 (OpenZeppelin) |
+
+---
+
+<div align="center">
+
+*Built for the protection of privacy in the modern digital age.*
+
+</div>
