@@ -1,8 +1,8 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from pathlib import Path
-from blockchain_utils import get_contract, mint_privacy_nft
+from blockchain_utils import get_contract, mint_privacy_nft, record_access_fire_and_forget
 from image_utils import detect_sensitive_regions
 from encrypt import encrypt_image, decrypt_image, decrypt_image_stream
 from stego import hide_secret_image, reveal_secret_image, COVERS_DIR
@@ -87,9 +87,9 @@ async def process_image(
                 token_id = mint_privacy_nft(wallet_address, encryption_result.key)
                 if token_id is None:
                     raise Exception("Blockchain Minting Failed")
-                print(f"✅ NFT Minted! Token ID: {token_id}")
+                print(f"[*] NFT Minted! Token ID: {token_id}")
             except Exception as b_err:
-                print(f"❌ Blockchain error: {b_err}")
+                print(f"[!] Blockchain error: {b_err}")
                 raise HTTPException(status_code=500, detail=f"Blockchain Error: {str(b_err)}")
 
         # Phase 4: S3 ROI metadata upload
@@ -170,7 +170,8 @@ async def process_image(
 async def decrypt_image_endpoint(
     filename: str = Form(...), 
     wallet_address: str = Form(...),
-    token_id: int = Form(...) # We need the token_id to check specific ownership
+    token_id: int = Form(...), # We need the token_id to check specific ownership
+    background_tasks: BackgroundTasks = BackgroundTasks()
 ):
     if not wallet_address:
         raise HTTPException(status_code=400, detail="Wallet address is required")
@@ -197,7 +198,10 @@ async def decrypt_image_endpoint(
         except Exception as e:
             raise HTTPException(status_code=403, detail=f"Ownership verification failed: {str(e)}")
 
-        print(f"✅ Ownership Verified for {wallet_address}. Decrypting in memory...")
+        print(f"[*] Ownership Verified for {wallet_address}. Decrypting in memory...")
+        
+        # Dispatch Blockchain Audit Trail (Fire-and-Forget)
+        background_tasks.add_task(record_access_fire_and_forget, token_id, wallet_address)
 
         # 3. Always fetch from Cloud (Strict Cloud-First Architecture)
         if filename.startswith("stego/"):
@@ -219,7 +223,7 @@ async def decrypt_image_endpoint(
                 s3_meta_key = f"encrypted/{filename}.roi"
                 is_stego = False
 
-        print(f"☁️ Fetching {s3_image_key} and metadata from AWS S3 directly to RAM...")
+        print(f"[*] Fetching {s3_image_key} and metadata from AWS S3 directly to RAM...")
         image_bytes = get_s3_bytes(s3_image_key)
         meta_bytes = get_s3_bytes(s3_meta_key)
 
@@ -317,3 +321,35 @@ async def delete_image_endpoint(
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/audit-trail/{token_id}")
+async def get_audit_trail(token_id: int, wallet_address: str):
+    if not wallet_address:
+        raise HTTPException(status_code=400, detail="Wallet address required")
+        
+    try:
+        w3, contract = get_contract()
+        if not contract:
+            raise HTTPException(status_code=500, detail="Blockchain connection failed")
+            
+        current_owner = contract.functions.ownerOf(token_id).call()
+        if w3.to_checksum_address(current_owner) != w3.to_checksum_address(wallet_address):
+            raise HTTPException(status_code=403, detail="Access Denied: You do not own this NFT.")
+            
+        records = contract.functions.getAuditTrail(token_id).call({'from': w3.to_checksum_address(wallet_address)})
+        
+        import datetime
+        formatted_records = []
+        for r in records:
+            dt = datetime.datetime.fromtimestamp(r[1]).isoformat()
+            formatted_records.append({
+                "accessor": r[0],
+                "timestamp": dt,
+                "action": r[2]
+            })
+        
+        return {"status": "success", "history": formatted_records[::-1]} # Return newest first
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
