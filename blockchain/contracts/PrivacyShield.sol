@@ -10,6 +10,8 @@ contract PrivacyShieldNFT is ERC721, Ownable {
     
     // Mapping from tokenId to encrypted key
     mapping(uint256 => string) private _keys;
+    // Mapping from tokenId to file hash (SHA-256)
+    mapping(uint256 => string) private _fileHashes;
 
     struct AccessRecord {
         address accessor;
@@ -26,11 +28,12 @@ contract PrivacyShieldNFT is ERC721, Ownable {
         Ownable(initialOwner) 
     {}
 
-    // Mint NFT and store the associated encryption key
-    function safeMint(address to, string memory encryptedKey) public onlyOwner returns (uint256) {
+    // Mint NFT and store the associated encryption key and file hash
+    function safeMint(address to, string memory encryptedKey, string memory fileHash) public onlyOwner returns (uint256) {
         uint256 tokenId = nextTokenId++;
         _safeMint(to, tokenId);
         _keys[tokenId] = encryptedKey;
+        _fileHashes[tokenId] = fileHash;
         return tokenId;
     }
 
@@ -38,6 +41,11 @@ contract PrivacyShieldNFT is ERC721, Ownable {
     function getKey(uint256 tokenId) public view returns (string memory) {
         require(ownerOf(tokenId) == msg.sender, "Caller is not the owner of this NFT");
         return _keys[tokenId];
+    }
+
+    function getFileHash(uint256 tokenId) public view returns (string memory) {
+        require(ownerOf(tokenId) == msg.sender || msg.sender == owner(), "Caller is not authorized to view the file hash");
+        return _fileHashes[tokenId];
     }
 
     function hasAccess(address user) public view returns (bool) {

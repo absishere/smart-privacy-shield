@@ -7,9 +7,10 @@ from image_utils import detect_sensitive_regions
 from encrypt import encrypt_image, decrypt_image, decrypt_image_stream
 from stego import hide_secret_image, reveal_secret_image, COVERS_DIR
 import shutil
-from cloud_utils import upload_to_s3, download_from_s3, list_user_images, get_s3_bytes, delete_from_s3
+from cloud_utils import upload_to_s3, download_from_s3, list_user_images, get_s3_bytes, delete_from_s3, recover_pristine_version
 import base64
 import io
+import hashlib
 
 app = FastAPI(title="Smart Privacy Shield API")
 
@@ -80,20 +81,9 @@ async def process_image(
             output_dir=TEMP_DIR
         )
 
-        # 3. MINT THE NFT
-        token_id = None
-        if wallet_address:
-            try:
-                token_id = mint_privacy_nft(wallet_address, encryption_result.key)
-                if token_id is None:
-                    raise Exception("Blockchain Minting Failed")
-                print(f"[*] NFT Minted! Token ID: {token_id}")
-            except Exception as b_err:
-                print(f"[!] Blockchain error: {b_err}")
-                raise HTTPException(status_code=500, detail=f"Blockchain Error: {str(b_err)}")
-
         # Phase 4: S3 ROI metadata upload
         roi_meta_path = TEMP_DIR / f"{file.filename}.roi"
+        final_upload_path = TEMP_DIR / file.filename
         
         # 4. PHASE 1: Image-in-Image Steganography (Conditional)
         if is_stego_mode:
@@ -115,9 +105,28 @@ async def process_image(
                 secret_path=str(TEMP_DIR / file.filename),
                 output_path=str(stego_output_path)
             )
+            final_upload_path = stego_output_path
 
-            # PHASE 2/4: AWS UPLOAD Image & Metadata
-            cloud_url = upload_to_s3(stego_output_path, f"stego/{wallet_address}/{file.filename}")
+        # Calculate SHA-256 hash of the final file to upload
+        with open(final_upload_path, "rb") as f:
+            file_bytes = f.read()
+            file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+        # 3. MINT THE NFT
+        token_id = None
+        if wallet_address:
+            try:
+                token_id = mint_privacy_nft(wallet_address, encryption_result.key, file_hash)
+                if token_id is None:
+                    raise Exception("Blockchain Minting Failed")
+                print(f"[*] NFT Minted! Token ID: {token_id}")
+            except Exception as b_err:
+                print(f"[!] Blockchain error: {b_err}")
+                raise HTTPException(status_code=500, detail=f"Blockchain Error: {str(b_err)}")
+
+        # PHASE 2/4: AWS UPLOAD Image & Metadata
+        if is_stego_mode:
+            cloud_url = upload_to_s3(final_upload_path, f"stego/{wallet_address}/{file.filename}")
             if roi_meta_path.exists(): upload_to_s3(roi_meta_path, f"stego/{wallet_address}/{file.filename}.roi")
             
             if not cloud_url:
@@ -127,7 +136,7 @@ async def process_image(
             if input_path.exists(): os.remove(input_path)
             if (TEMP_DIR / file.filename).exists(): os.remove(TEMP_DIR / file.filename)
             if roi_meta_path.exists(): os.remove(roi_meta_path)
-            if stego_output_path.exists(): os.remove(stego_output_path)
+            if final_upload_path.exists(): os.remove(final_upload_path)
 
             return {
                 "status": "success",
@@ -140,7 +149,7 @@ async def process_image(
             }
 
         # DEFAULT: Feature 1 Only
-        cloud_url = upload_to_s3(TEMP_DIR / file.filename, f"encrypted/{wallet_address}/{file.filename}")
+        cloud_url = upload_to_s3(final_upload_path, f"encrypted/{wallet_address}/{file.filename}")
         if roi_meta_path.exists(): upload_to_s3(roi_meta_path, f"encrypted/{wallet_address}/{file.filename}.roi")
         
         if not cloud_url:
@@ -194,6 +203,7 @@ async def decrypt_image_endpoint(
                 
             # Fetch the decryption key directly from the Smart Contract using token_id!    
             encrypted_key = contract.functions.getKey(token_id).call({'from': w3.to_checksum_address(wallet_address)})
+            expected_hash = contract.functions.getFileHash(token_id).call({'from': w3.to_checksum_address(wallet_address)})
             
         except Exception as e:
             raise HTTPException(status_code=403, detail=f"Ownership verification failed: {str(e)}")
@@ -229,6 +239,14 @@ async def decrypt_image_endpoint(
 
         if not image_bytes or not meta_bytes:
             raise HTTPException(status_code=404, detail="Encrypted data or metadata missing from AWS S3.")
+
+        # Tamper Detection
+        downloaded_hash = hashlib.sha256(image_bytes).hexdigest()
+        if downloaded_hash != expected_hash:
+            print(f"⚠️ CRITICAL WARNING: Integrity mismatch for {s3_image_key}. Tampering detected!")
+            image_bytes = recover_pristine_version(s3_image_key, expected_hash)
+            if not image_bytes:
+                raise HTTPException(status_code=409, detail="CRITICAL: File integrity compromised. Tampering detected and recovery failed.")
 
         # 4. Steganography extraction OR Standard Decryption (In Memory)
         if is_stego:

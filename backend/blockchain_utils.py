@@ -33,7 +33,7 @@ def get_contract():
     contract = w3.eth.contract(address=address, abi=abi)
     return w3, contract
 
-def mint_privacy_nft(wallet_address, encrypted_key):
+def mint_privacy_nft(wallet_address, encrypted_key, file_hash):
     w3, contract = get_contract()
     if not w3 or not contract:
         return None
@@ -54,7 +54,8 @@ def mint_privacy_nft(wallet_address, encrypted_key):
         # 3. Build the Transaction
         transaction = contract.functions.safeMint(
             w3.to_checksum_address(wallet_address), 
-            encrypted_key
+            encrypted_key,
+            file_hash
         ).build_transaction({
             'chainId': chain_id, # Can be overridden in production
             'gas': 2000000,

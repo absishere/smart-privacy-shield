@@ -5,6 +5,7 @@ const Vault = ({ walletAddress }) => {
     const [images, setImages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState("");
+    const [isTampered, setIsTampered] = useState(false);
     
     // Decryption States
     const [decryptedImage, setDecryptedImage] = useState(null);
@@ -76,12 +77,20 @@ const Vault = ({ walletAddress }) => {
                 setDecryptedImage(res.data.image_data);
                 setTimeLeft(60); // 60 seconds viewing window
                 setStatus("Decrypted successfully. Image is live in secure memory.");
+                setIsTampered(false);
             } else {
                 setStatus(`Error: ${res.data.message}`);
+                setIsTampered(false);
             }
         } catch (error) {
             console.error(error);
-            setStatus(error.response?.data?.detail || "Decryption failed. Check ownership.");
+            if (error.response?.status === 409) {
+                setIsTampered(true);
+                setStatus(`TAMPER DETECTION: ${error.response?.data?.detail}`);
+            } else {
+                setIsTampered(false);
+                setStatus(error.response?.data?.detail || "Decryption failed. Check ownership.");
+            }
         }
         setIsDecrypting(false);
     };
@@ -166,7 +175,8 @@ const Vault = ({ walletAddress }) => {
                 </p>
 
                 {status && (
-                    <div className="status-banner">
+                    <div className="status-banner" style={isTampered ? { backgroundColor: "#8b0000", color: "#fff", border: "2px solid #ff0000", padding: "15px", fontWeight: "bold" } : {}}>
+                        {isTampered && <span style={{ fontSize: "1.5rem", marginRight: "10px" }}>🚨</span>}
                         {status}
                     </div>
                 )}
