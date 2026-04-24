@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios from '../api/axios';
 
 const ImageUpload = ({ walletAddress }) => {
     const [file, setFile] = useState(null);
@@ -22,7 +22,7 @@ const ImageUpload = ({ walletAddress }) => {
     useEffect(() => {
         const fetchCovers = async () => {
             try {
-                const res = await axios.get("http://127.0.0.1:8000/covers");
+                const res = await axios.get("/covers");
                 setAvailableCovers(res.data.covers || []);
                 if (res.data.covers && res.data.covers.length > 0 && !res.data.covers.includes(coverImageName)) {
                     setCoverImageName(res.data.covers[0]);
@@ -60,7 +60,7 @@ const ImageUpload = ({ walletAddress }) => {
         formData.append("wallet_address", walletAddress);
         formData.append("is_stego_mode", isStegoMode);
         
-        let endpoint = "http://127.0.0.1:8000/process-image";
+        let endpoint = "/process-image";
         
         if (isStegoMode) {
             formData.append("cover_image_name", coverImageName);
@@ -111,7 +111,7 @@ const ImageUpload = ({ walletAddress }) => {
         formData.append("wallet_address", walletAddress);
         formData.append("token_id", tokenId); // Pass token_id to backend
         
-        let endpoint = "http://127.0.0.1:8000/decrypt";
+        let endpoint = "/decrypt";
 
         try {
             const res = await axios.post(endpoint, formData, {

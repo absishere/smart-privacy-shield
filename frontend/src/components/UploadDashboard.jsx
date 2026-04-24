@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import axios from '../api/axios';
 
 const UploadDashboard = ({ walletAddress }) => {
     const [files, setFiles] = useState([]);
@@ -31,7 +31,7 @@ const UploadDashboard = ({ walletAddress }) => {
 
             try {
                 setGlobalStatus(`Encrypting and Minting ${i + 1} of ${files.length}...`);
-                const res = await axios.post("http://127.0.0.1:8000/process-image", formData, {
+                const res = await axios.post("/process-image", formData, {
                     headers: { "Content-Type": "multipart/form-data" }
                 });
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios from '../api/axios';
 
 const Vault = ({ walletAddress }) => {
     const [images, setImages] = useState([]);
@@ -20,7 +20,7 @@ const Vault = ({ walletAddress }) => {
     // Fetch images from S3 via Backend
     const fetchImages = async () => {
         try {
-            const res = await axios.get(`http://127.0.0.1:8000/user-images?wallet_address=${walletAddress}`);
+            const res = await axios.get(`/user-images?wallet_address=${walletAddress}`);
             if (res.data.status === "success") {
                 // Filter out the .roi files so we only show the images
                 const imageFiles = res.data.images.filter(img => !img.key.endsWith('.roi'));
@@ -69,7 +69,7 @@ const Vault = ({ walletAddress }) => {
         formData.append("token_id", tokenId);
 
         try {
-            const res = await axios.post("http://127.0.0.1:8000/decrypt", formData, {
+            const res = await axios.post("/decrypt", formData, {
                 headers: { "Content-Type": "multipart/form-data" }
             });
 
@@ -121,7 +121,7 @@ const Vault = ({ walletAddress }) => {
         formData.append("token_id", tokenId);
 
         try {
-            const res = await axios.delete("http://127.0.0.1:8000/delete-image", {
+            const res = await axios.delete("/delete-image", {
                 data: formData, // axios.delete requires payload to be inside 'data'
                 headers: { "Content-Type": "multipart/form-data" }
             });
@@ -147,7 +147,7 @@ const Vault = ({ walletAddress }) => {
         setStatus("Fetching secure logs from blockchain...");
 
         try {
-            const res = await axios.get(`http://127.0.0.1:8000/audit-trail/${tokenId}?wallet_address=${walletAddress}`);
+            const res = await axios.get(`/audit-trail/${tokenId}?wallet_address=${walletAddress}`);
             if (res.data.status === "success") {
                 setHistoryData(res.data.history);
                 setStatus("Audit log retrieved.");
