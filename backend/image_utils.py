@@ -4,7 +4,7 @@ import easyocr
 import numpy as np
 
 # 1. Initialize AI Models
-print("⏳ Loading AI Models...")
+print("[*] Loading AI Models...")
 
 # Face Detector (MediaPipe)
 mp_face_detection = mp.solutions.face_detection
@@ -13,7 +13,7 @@ face_detector = mp_face_detection.FaceDetection(model_selection=1, min_detection
 # Text Detector (EasyOCR)
 reader = easyocr.Reader(['en'], gpu=False, quantize=False)
 
-print("✅ AI Models Loaded!")
+print("[*] AI Models Loaded!")
 
 def detect_sensitive_regions(input_path):
     """

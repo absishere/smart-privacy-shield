@@ -1,20 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios from '../api/axios';
 
 const Vault = ({ walletAddress }) => {
     const [images, setImages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState("");
+    const [isTampered, setIsTampered] = useState(false);
     
     // Decryption States
     const [decryptedImage, setDecryptedImage] = useState(null);
     const [isDecrypting, setIsDecrypting] = useState(false);
     const [timeLeft, setTimeLeft] = useState(0);
 
+    // Audit Trail States
+    const [historyModalOpen, setHistoryModalOpen] = useState(false);
+    const [historyData, setHistoryData] = useState([]);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
     // Fetch images from S3 via Backend
     const fetchImages = async () => {
         try {
-            const res = await axios.get(`http://127.0.0.1:8000/user-images?wallet_address=${walletAddress}`);
+            const res = await axios.get(`/user-images?wallet_address=${walletAddress}`);
             if (res.data.status === "success") {
                 // Filter out the .roi files so we only show the images
                 const imageFiles = res.data.images.filter(img => !img.key.endsWith('.roi'));
@@ -63,7 +69,7 @@ const Vault = ({ walletAddress }) => {
         formData.append("token_id", tokenId);
 
         try {
-            const res = await axios.post("http://127.0.0.1:8000/decrypt", formData, {
+            const res = await axios.post("/decrypt", formData, {
                 headers: { "Content-Type": "multipart/form-data" }
             });
 
@@ -71,12 +77,20 @@ const Vault = ({ walletAddress }) => {
                 setDecryptedImage(res.data.image_data);
                 setTimeLeft(60); // 60 seconds viewing window
                 setStatus("Decrypted successfully. Image is live in secure memory.");
+                setIsTampered(false);
             } else {
                 setStatus(`Error: ${res.data.message}`);
+                setIsTampered(false);
             }
         } catch (error) {
             console.error(error);
-            setStatus(error.response?.data?.detail || "Decryption failed. Check ownership.");
+            if (error.response?.status === 409) {
+                setIsTampered(true);
+                setStatus(`TAMPER DETECTION: ${error.response?.data?.detail}`);
+            } else {
+                setIsTampered(false);
+                setStatus(error.response?.data?.detail || "Decryption failed. Check ownership.");
+            }
         }
         setIsDecrypting(false);
     };
@@ -107,7 +121,7 @@ const Vault = ({ walletAddress }) => {
         formData.append("token_id", tokenId);
 
         try {
-            const res = await axios.delete("http://127.0.0.1:8000/delete-image", {
+            const res = await axios.delete("/delete-image", {
                 data: formData, // axios.delete requires payload to be inside 'data'
                 headers: { "Content-Type": "multipart/form-data" }
             });
@@ -123,6 +137,33 @@ const Vault = ({ walletAddress }) => {
         }
     };
 
+    const handleViewHistory = async (s3Key) => {
+        const tokenId = prompt("Enter the NFT Token ID to view immutable audit trail:");
+        if (!tokenId) return;
+
+        setHistoryModalOpen(true);
+        setIsHistoryLoading(true);
+        setHistoryData([]);
+        setStatus("Fetching secure logs from blockchain...");
+
+        try {
+            const res = await axios.get(`/audit-trail/${tokenId}?wallet_address=${walletAddress}`);
+            if (res.data.status === "success") {
+                setHistoryData(res.data.history);
+                setStatus("Audit log retrieved.");
+            } else {
+                setStatus(`Error: ${res.data.message}`);
+                setHistoryModalOpen(false);
+            }
+        } catch (error) {
+            console.error(error);
+            setStatus(error.response?.data?.detail || "Failed to load audit history. Verify ownership.");
+            setHistoryModalOpen(false);
+        } finally {
+            setIsHistoryLoading(false);
+        }
+    };
+
     if (loading) return <div className="glass-card">Loading Secure Vault...</div>;
 
     return (
@@ -134,8 +175,41 @@ const Vault = ({ walletAddress }) => {
                 </p>
 
                 {status && (
-                    <div className="status-banner">
+                    <div className="status-banner" style={isTampered ? { backgroundColor: "#8b0000", color: "#fff", border: "2px solid #ff0000", padding: "15px", fontWeight: "bold" } : {}}>
+                        {isTampered && <span style={{ fontSize: "1.5rem", marginRight: "10px" }}>🚨</span>}
                         {status}
+                    </div>
+                )}
+
+                {/* Audit Trail Modal */}
+                {historyModalOpen && (
+                    <div className="history-modal glass-card" style={{ padding: "20px", marginBottom: "30px", border: "1px solid var(--primary-accent)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
+                            <h4 style={{ color: "var(--primary-accent)", margin: 0 }}>📜 Immutable Audit Trail</h4>
+                            <button className="btn" style={{ padding: "5px 10px", background: "transparent", border: "none", color: "white", cursor: "pointer", fontSize: "1.2rem" }} onClick={() => setHistoryModalOpen(false)}>
+                                ✖
+                            </button>
+                        </div>
+                        
+                        {isHistoryLoading ? (
+                            <p style={{ textAlign: "center", color: "var(--text-secondary)" }}>Querying Blockchain...</p>
+                        ) : historyData.length === 0 ? (
+                            <p style={{ textAlign: "center", color: "var(--text-secondary)" }}>No access records found.</p>
+                        ) : (
+                            <div style={{ maxHeight: "250px", overflowY: "auto", paddingRight: "5px" }}>
+                                {historyData.map((record, i) => (
+                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px", borderBottom: "1px solid rgba(255,255,255,0.1)", fontSize: "0.9rem" }}>
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                                            <span style={{ fontWeight: "bold", color: "var(--text-secondary)" }}>Accessor: <span style={{ color: "white", fontFamily: "monospace" }}>{record.accessor.substring(0,6)}...{record.accessor.substring(record.accessor.length-4)}</span></span>
+                                            <span style={{ color: "var(--primary-accent)", fontSize: "0.8rem" }}>{new Date(record.timestamp).toLocaleString()}</span>
+                                        </div>
+                                        <div>
+                                            <span style={{ background: "rgba(0,255,0,0.1)", color: "#0f0", padding: "3px 8px", borderRadius: "12px", fontSize: "0.8rem" }}>{record.action}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -198,6 +272,14 @@ const Vault = ({ walletAddress }) => {
                                     🗑️ Shred
                                 </button>
                             </div>
+                            <button 
+                                className="btn" 
+                                style={{ width: "100%", marginTop: "10px", fontSize: "0.9rem", background: "var(--bg-card)", border: "1px solid rgba(255,255,255,0.2)" }}
+                                onClick={() => handleViewHistory(img.key)}
+                                disabled={isDecrypting || decryptedImage !== null}
+                            >
+                                📜 View History
+                            </button>
                         </div>
                     ))}
                     {images.length === 0 && <p>Your vault is empty.</p>}

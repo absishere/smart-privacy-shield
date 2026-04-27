@@ -2,6 +2,7 @@ import boto3
 import os
 from dotenv import load_dotenv
 from botocore.exceptions import NoCredentialsError
+import hashlib
 
 load_dotenv()
 
@@ -93,3 +94,38 @@ def delete_from_s3(object_name: str) -> bool:
     except Exception as e:
         print(f"❌ AWS S3 Delete Error for {object_name}: {e}")
         return False
+
+def recover_pristine_version(object_name: str, expected_hash: str) -> bytes | None:
+    """Attempts to recover a clean version of the file from S3 using Object Versioning."""
+    try:
+        versions_response = s3_client.list_object_versions(Bucket=BUCKET_NAME, Prefix=object_name)
+        versions = versions_response.get('Versions', [])
+        
+        for version in versions:
+            version_id = version['VersionId']
+            # Fetch this specific version
+            response = s3_client.get_object(Bucket=BUCKET_NAME, Key=object_name, VersionId=version_id)
+            file_bytes = response['Body'].read()
+            
+            # Calculate hash
+            current_hash = hashlib.sha256(file_bytes).hexdigest()
+            if current_hash == expected_hash:
+                print(f"✅ S3 Self-Healing: Found pristine version (ID: {version_id})")
+                
+                # Perform permanent healing: copy this exact version over the current mutating object
+                print("🔄 Starting permanent S3 healing copy...")
+                copy_source = {
+                    'Bucket': BUCKET_NAME,
+                    'Key': object_name,
+                    'VersionId': version_id
+                }
+                s3_client.copy_object(CopySource=copy_source, Bucket=BUCKET_NAME, Key=object_name)
+                print(f"✅ S3 Self-Healing: Bucket permanently healed for {object_name}.")
+                
+                return file_bytes
+                
+        print(f"❌ S3 Self-Healing: No pristine version found matching hash for {object_name}.")
+        return None
+    except Exception as e:
+        print(f"❌ S3 Self-Healing Error: {e}")
+        return None
