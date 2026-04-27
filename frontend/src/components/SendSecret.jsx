@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import axios from '../api/axios';
 
 const SendSecret = ({ walletAddress }) => {
     const [file, setFile] = useState(null);
@@ -18,7 +18,7 @@ const SendSecret = ({ walletAddress }) => {
     React.useEffect(() => {
         const fetchCovers = async () => {
             try {
-                const res = await axios.get("http://127.0.0.1:8000/covers");
+                const res = await axios.get("/covers");
                 setCoverOptions(res.data.covers || ["default_cover.png"]);
                 if (res.data.covers && res.data.covers.length > 0) {
                     setSelectedCover(res.data.covers[0]);
@@ -63,7 +63,7 @@ const SendSecret = ({ walletAddress }) => {
         }
 
         try {
-            const res = await axios.post("http://127.0.0.1:8000/process-image", formData, {
+            const res = await axios.post("/process-image", formData, {
                 headers: { "Content-Type": "multipart/form-data" }
             });
 
